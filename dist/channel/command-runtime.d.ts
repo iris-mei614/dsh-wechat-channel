@@ -18,4 +18,3 @@ export interface CommandRuntimeDeps {
 }
 /** Local WeChat slash-commands; kept out of WechatChannel to shrink the orchestrator. */
 export declare function runWechatCommand(deps: CommandRuntimeDeps, userId: string, name: string, args: string): Promise<void>;
-//# sourceMappingURL=command-runtime.d.ts.map

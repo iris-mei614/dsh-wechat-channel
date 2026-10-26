@@ -48,4 +48,3 @@ export interface LoginBeginResult {
     qrUrl?: string;
     message: string;
 }
-//# sourceMappingURL=types.d.ts.map

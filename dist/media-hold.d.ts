@@ -35,4 +35,3 @@ export declare class MediaHoldBuffer {
     size(): number;
 }
 export declare function formatMediaHoldPrompt(fileCount: number, holdMs: number): string;
-//# sourceMappingURL=media-hold.d.ts.map

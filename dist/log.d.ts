@@ -17,4 +17,3 @@ export interface SafeLogger {
 }
 export declare function createSafeLogger(logger: LoggerLike, redactor: Redactor): SafeLogger;
 export declare function describeError(error: unknown): string;
-//# sourceMappingURL=log.d.ts.map

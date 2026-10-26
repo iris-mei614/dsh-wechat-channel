@@ -27,4 +27,3 @@ export declare class ProgressTracker {
 export declare function formatProgressMessage(elapsedMs: number, activity?: string): string;
 /** Map a raw tool / event name into a short Chinese activity line. */
 export declare function describeToolActivity(toolName: string, detail?: string): string;
-//# sourceMappingURL=progress.d.ts.map

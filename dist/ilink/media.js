@@ -169,4 +169,3 @@ export async function sendFileMessage(api, to, filePath, uploaded, contextToken)
         },
     }));
 }
-//# sourceMappingURL=media.js.map

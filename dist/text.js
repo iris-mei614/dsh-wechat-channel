@@ -68,4 +68,3 @@ export function formatTimestamp(ms) {
         return '无';
     return new Date(ms).toLocaleString('zh-CN', { hour12: false });
 }
-//# sourceMappingURL=text.js.map

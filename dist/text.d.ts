@@ -6,4 +6,3 @@ export declare function truncate(value: string, maxChars: number): string;
 export declare function formatDuration(ms: number): string;
 /** Render an ISO timestamp in the host's local timezone. */
 export declare function formatTimestamp(ms: number): string;
-//# sourceMappingURL=text.d.ts.map

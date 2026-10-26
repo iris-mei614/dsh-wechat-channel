@@ -109,4 +109,3 @@ export declare class WechatChannel {
     private completeLogin;
     private noteError;
 }
-//# sourceMappingURL=wechat-channel.d.ts.map

@@ -71,4 +71,3 @@ export declare class StateStore {
     flush(): Promise<void>;
     close(): Promise<void>;
 }
-//# sourceMappingURL=state.d.ts.map

@@ -45,4 +45,3 @@ export declare function unboundSessionHint(autoCreateEnabled: boolean): string;
  * callers always still print the URL.
  */
 export declare function printQrToTerminal(url: string, log: (line: string) => void): Promise<boolean>;
-//# sourceMappingURL=onboarding.d.ts.map

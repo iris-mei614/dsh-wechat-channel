@@ -1330,4 +1330,3 @@ export class WechatChannel {
         }
     }
 }
-//# sourceMappingURL=wechat-channel.js.map

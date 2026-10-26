@@ -23,4 +23,3 @@ export declare function resolveSwitchArgument(argument: string, snapshot: readon
     id?: string;
     error?: string;
 };
-//# sourceMappingURL=commands.d.ts.map

@@ -46,4 +46,3 @@ export declare class OutboundQueue {
     stop(): void;
     get size(): number;
 }
-//# sourceMappingURL=rate-limit.d.ts.map

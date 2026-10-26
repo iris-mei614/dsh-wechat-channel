@@ -22,4 +22,3 @@ export function formatWechatSessionTitle(firstMessageOrSummary) {
     const summary = summarizeForSessionTitle(firstMessageOrSummary);
     return `${TITLE_PREFIX} ${summary}`;
 }
-//# sourceMappingURL=session-title.js.map

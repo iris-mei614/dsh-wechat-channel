@@ -7,4 +7,3 @@ import type { SafeLogger } from './log.js';
  * reaches the Agent via the text summary.
  */
 export declare function attachSavedMediaToDsh(ctx: PluginContextLike, saved: readonly SavedInboundMedia[], logger: SafeLogger): Promise<DeliveredAttachment[]>;
-//# sourceMappingURL=attachments.d.ts.map

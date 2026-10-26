@@ -92,4 +92,3 @@ export function formatMediaHoldPrompt(fileCount, holdMs) {
         `也可发送「开始」立即分析。`,
     ].join('\n');
 }
-//# sourceMappingURL=media-hold.js.map

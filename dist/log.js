@@ -63,4 +63,3 @@ export function describeError(error) {
         return String(error);
     }
 }
-//# sourceMappingURL=log.js.map

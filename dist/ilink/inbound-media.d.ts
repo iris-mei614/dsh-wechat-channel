@@ -24,4 +24,3 @@ export declare function saveInboundMediaFiles(items: readonly DownloadedInboundM
     maxBytes: number;
 }): Promise<SavedInboundMedia[]>;
 export declare function describeSavedMedia(files: readonly SavedInboundMedia[]): string;
-//# sourceMappingURL=inbound-media.d.ts.map

@@ -105,4 +105,3 @@ export { resolveConfig, DEFAULT_TOKEN_REF } from './config.js';
 export { splitText } from './text.js';
 export { parseCommand } from './commands.js';
 export { resolveSetupPhase, loginGuidanceMessage, welcomeAfterActivate, } from './onboarding.js';
-//# sourceMappingURL=index.js.map

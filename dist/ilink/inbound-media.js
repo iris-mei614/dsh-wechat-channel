@@ -118,4 +118,3 @@ export function describeSavedMedia(files) {
     }
     return lines.join('\n');
 }
-//# sourceMappingURL=inbound-media.js.map

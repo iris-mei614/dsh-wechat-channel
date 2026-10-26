@@ -170,4 +170,3 @@ export async function runWechatCommand(deps, userId, name, args) {
         await deps.sendReply(userId, `命令没成功：${deps.describeError(error)}\n可以发「重试」再试一次。`).catch(() => { });
     }
 }
-//# sourceMappingURL=command-runtime.js.map

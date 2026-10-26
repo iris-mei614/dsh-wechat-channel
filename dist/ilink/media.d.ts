@@ -26,4 +26,3 @@ export declare function uploadMedia(api: ApiClient, filePath: string, toUserId: 
 export declare function sendImageMessage(api: ApiClient, to: string, uploaded: UploadedMedia, contextToken: string): Promise<void>;
 export declare function sendVideoMessage(api: ApiClient, to: string, uploaded: UploadedMedia, contextToken: string): Promise<void>;
 export declare function sendFileMessage(api: ApiClient, to: string, filePath: string, uploaded: UploadedMedia, contextToken: string): Promise<void>;
-//# sourceMappingURL=media.d.ts.map

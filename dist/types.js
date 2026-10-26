@@ -7,4 +7,3 @@
  * is described structurally and accessed through the public `ctx` surface.
  */
 export {};
-//# sourceMappingURL=types.js.map

@@ -37,6 +37,7 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.map",
     "cordis.patch.yml",
     "examples",
     "安装与使用教程.md",
@@ -46,7 +47,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
     "smoke": "npm run build && node scripts/smoke.mjs",

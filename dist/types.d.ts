@@ -231,4 +231,3 @@ export interface PluginContextLike {
     };
     [key: string]: any;
 }
-//# sourceMappingURL=types.d.ts.map

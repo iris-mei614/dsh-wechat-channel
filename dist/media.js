@@ -84,4 +84,3 @@ export function mimeOf(kind, filePath) {
             return 'application/octet-stream';
     }
 }
-//# sourceMappingURL=media.js.map

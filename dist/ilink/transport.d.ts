@@ -27,4 +27,3 @@ export declare class WechatIlinkTransport implements IlinkTransport {
 }
 export declare function extractInboundText(message: InboundMessage): string;
 export {};
-//# sourceMappingURL=transport.d.ts.map

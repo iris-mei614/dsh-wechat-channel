@@ -121,4 +121,3 @@ export function resolveSwitchArgument(argument, snapshot) {
         return { error: `「${value}」对上了多个会话，请把 ID 再写长一点。` };
     return { id: value };
 }
-//# sourceMappingURL=commands.js.map

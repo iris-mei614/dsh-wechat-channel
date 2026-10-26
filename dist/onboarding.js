@@ -154,4 +154,3 @@ export async function printQrToTerminal(url, log) {
         return false;
     }
 }
-//# sourceMappingURL=onboarding.js.map

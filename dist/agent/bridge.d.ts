@@ -74,4 +74,3 @@ export declare class DshAgentBridge implements AgentBridge {
     private pruneTurns;
     dispose(): Promise<void>;
 }
-//# sourceMappingURL=bridge.d.ts.map

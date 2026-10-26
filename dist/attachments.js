@@ -45,4 +45,3 @@ export async function attachSavedMediaToDsh(ctx, saved, logger) {
     }
     return results;
 }
-//# sourceMappingURL=attachments.js.map

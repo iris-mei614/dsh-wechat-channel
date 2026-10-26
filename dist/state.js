@@ -256,4 +256,3 @@ export class StateStore {
             await this.saving;
     }
 }
-//# sourceMappingURL=state.js.map

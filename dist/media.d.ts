@@ -26,4 +26,3 @@ export interface ValidateOptions {
 export declare function validateMediaFile(filePath: string, options: ValidateOptions): Promise<ValidatedMedia>;
 /** MIME type used by the iLink client's media routing. */
 export declare function mimeOf(kind: MediaKind, filePath: string): string;
-//# sourceMappingURL=media.d.ts.map

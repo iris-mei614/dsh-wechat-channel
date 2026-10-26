@@ -8,4 +8,3 @@ import type { SafeLogger } from './log.js';
  *   - `wechat_login`  obtain a QR login URL
  */
 export declare function registerTools(ctx: PluginContextLike, channel: WechatChannel, logger: SafeLogger): Array<() => void>;
-//# sourceMappingURL=tools.d.ts.map

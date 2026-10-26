@@ -19,4 +19,3 @@ export declare function audioMeta(filePath: string, buffer: Buffer): AudioMeta;
  */
 export declare function sendVoice(api: ApiClient, to: string, filePath: string, contextToken: string): Promise<void>;
 export {};
-//# sourceMappingURL=audio.d.ts.map

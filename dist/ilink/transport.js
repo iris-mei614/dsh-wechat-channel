@@ -173,4 +173,3 @@ export function extractInboundText(message) {
     }
     return parts.join('\n').trim();
 }
-//# sourceMappingURL=transport.js.map

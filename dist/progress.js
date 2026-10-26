@@ -112,4 +112,3 @@ export function describeToolActivity(toolName, detail = '') {
         return hint === '' ? '正在思考' : `正在处理：${hint.slice(0, 48)}`;
     return hint === '' ? `正在调用 ${name}` : `正在调用 ${name}（${hint.slice(0, 32)}）`;
 }
-//# sourceMappingURL=progress.js.map

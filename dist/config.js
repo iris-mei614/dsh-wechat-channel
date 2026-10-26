@@ -135,4 +135,3 @@ export function resolveConfig(raw) {
         askCaptionOnMediaOnly: booleanValue(input.askCaptionOnMediaOnly, true),
     };
 }
-//# sourceMappingURL=config.js.map

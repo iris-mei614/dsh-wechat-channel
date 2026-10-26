@@ -67,4 +67,3 @@ export declare function resolveDshHome(configured?: string): string;
  * Safe to call with raw YAML or an already-validated Config object.
  */
 export declare function resolveConfig(raw: RawConfig | Config | undefined): ResolvedConfig;
-//# sourceMappingURL=config.d.ts.map
