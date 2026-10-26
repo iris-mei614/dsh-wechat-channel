@@ -1,6 +1,6 @@
 {
   "name": "dsh-wechat-channel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Bidirectional WeChat channel for DeepSeek Harness using the official iLink Bot API",
   "keywords": [
     "deepseek-harness",

@@ -480,7 +480,52 @@ npm run build
 
 ---
 
-## 15. 目录结构
+## 15. 如何发版（维护者）
+
+分支约定：`dev` 为开发区，`main` 为发布区（受保护，只能经 PR 合入）。推送 tag `vX.Y.Z` 会触发 GitHub Actions（`publish.yml`），用 npm Trusted Publishing 自动 `npm publish`（无需写死 token）。
+
+```text
+功能开发 → push 到 dev → PR 合入 main
+         → 在 main 上确认 package.json version
+         → git tag vX.Y.Z && git push origin vX.Y.Z
+         → Actions「Publish Package」通过 → npm 上线
+```
+
+### 15.1 一次完整发布
+
+1. 在 **`dev`** 上改代码，并更新 `package.json` 的 `version`、`CHANGELOG.md`。
+2. `npm run check` 本地通过后 push `dev`，开 PR 到 `main`，等 CI job **`check`** 绿了再合并。
+3. 合并后切到 **`main`** 并拉取最新：
+
+```bash
+git checkout main
+git pull origin main
+```
+
+4. 确认 tag 与版本一致后打 tag 并推送（**只推 tag，不要强推 `main`**）：
+
+```bash
+# 假设 version 为 0.2.1
+node -p "require('./package.json').version"   # 应输出 0.2.1
+git tag v0.2.1
+git push origin v0.2.1
+```
+
+5. 打开仓库 **Actions → Publish Package**，确认 publish 成功；再用下面命令核对：
+
+```bash
+npm view dsh-wechat-channel version
+```
+
+### 15.2 注意
+
+- Tag 必须是 `v` + 与 `package.json` **完全相同**的版本（workflow 会校验，不一致会失败）。
+- 不要在已发布过的版本号上重复打 tag；发新版请先 bump version。
+- 日常开发请留在 `dev`；不要直接往 `main` 推 commit。
+
+---
+
+## 16. 目录结构
 
 ```
 dsh-wechat-channel/
@@ -502,7 +547,7 @@ dsh-wechat-channel/
 
 ---
 
-## 16. 常见问题与排查
+## 17. 常见问题与排查
 
 | 现象 | 处理 |
 |---|---|
@@ -514,31 +559,31 @@ dsh-wechat-channel/
 
 更细步骤见下方；完整本机教程见 [`安装与使用教程.md`](./安装与使用教程.md)。
 
-### 16.1 扫码后微信没反应
+### 17.1 扫码后微信没反应
 
 - 确认微信版本 ≥ 8.0.70，且“设置 → 插件”里有机器人/ClawBot 入口；
 - 确认扫码账号就是发消息的账号，与 `ownerUserId` 一致；
 - 安装/重装后必须**重启** `dsh web`；
 - 先给 Bot 发一条消息，拿到 `context_token`。
 
-### 16.2 日志出现 `errcode -14`
+### 17.2 日志出现 `errcode -14`
 
 Bot 会话过期。用 `wechat_login` 重新扫码；或设置 `autoRelogin: true` 让插件自动请求新二维码。`autoRelogin` 只负责生成二维码，仍需要人扫码。
 
-### 16.3 主动推送没到
+### 17.3 主动推送没到
 
 - 检查是否超过 20 小时窗口；
 - 检查是否有 `context_token`；
 - 检查 `/status` 的“待补发摘要”；
 - 微信服务端可能直接丢弃，不会给插件明确回执。
 
-### 16.4 文件被拒绝
+### 17.4 文件被拒绝
 
 - 默认只允许会话 cwd、进程 cwd、`mediaRoots`；
 - 单文件默认 ≤ 100 MiB；
 - 路径会 `realpath`，symlink 指向根目录外会被拒绝。
 
-### 16.5 文件发送报 `getUploadUrl returned no upload_param`
+### 17.5 文件发送报 `getUploadUrl returned no upload_param`
 
 这是 iLink 服务端从旧 `upload_param` 切换到 `upload_full_url` 导致的。插件 **0.1.1** 已同时支持两种返回：
 
@@ -547,12 +592,12 @@ Bot 会话过期。用 `wechat_login` 重新扫码；或设置 `autoRelogin: tru
 
 更新后必须重新 `npm run build` 并重启 `dsh web`。如果待补发摘要中已有文件，下次微信入站会自动重试。
 
-### 16.6 `dsh-agent-message` 装不上
+### 17.6 `dsh-agent-message` 装不上
 
 它的 1.6.0 版本 peer 范围是 DSH `<0.2.0`，与本仓库的 `0.2.1-rc.2` 不匹配。本插件已内置等价投递逻辑，不需要安装它。
 
 ---
 
-## 17. 许可
+## 18. 许可
 
 MIT。见 [LICENSE](./LICENSE)。
