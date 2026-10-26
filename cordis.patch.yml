@@ -1,0 +1,30 @@
+# Mount the WeChat iLink channel into a DSH profile.
+#
+# Install first (from the directory containing this file):
+#   dsh plugin --profile web add /path/to/dsh-wechat-channel
+#
+# Then edit the generated profile's cordis.patch.yml if you want non-default
+# options. The block below is intentionally minimal: every field is optional.
+- insert:
+    - id: wechat-channel
+      name: 'dsh-wechat-channel'
+      config:
+        # Bind an existing session. Leave empty and use /bind or /new in WeChat.
+        defaultSessionId: ''
+        # The credential reference resolved through ctx.credentials.
+        # Put the bot token here (or let the QR login store it in DSH credentials).
+        botTokenRef: WECHAT_ILINK_BOT_TOKEN
+        # autoLogin: true
+        # ownerUserId: ''
+        # newSessionCwd: ''
+        # stateDir: ''
+        # First-run UX (defaults are already friendly):
+        # autoCreateSessionOnFirstMessage: true
+        # sendWelcomeOnActivate: true
+        # printQrInTerminal: true
+        # sendProgressUpdates: true
+        # progressIntervalMs: 180000
+        # enableLoginPage: true
+        # loginPagePort: 19876
+        # enableInboundMedia: true
+        # inboundMediaDir: wechat-inbox

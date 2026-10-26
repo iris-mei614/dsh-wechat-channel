@@ -1,0 +1,23 @@
+# Copy the `config` block over the generated `wechat-channel` entry in
+# ~/.dsh/profiles/web/cordis.patch.yml, or pass this file with:
+#   dsh --profile web --patch ./examples/profile.patch.yml
+#
+# The only required field is defaultSessionId. Everything else is optional.
+- id: wechat-channel
+  config:
+    defaultSessionId: 'session-REPLACE-WITH-AN-EXISTING-SESSION-ID'
+    botTokenRef: WECHAT_ILINK_BOT_TOKEN
+    ownerUserId: ''
+    newSessionCwd: ''
+    stateDir: ''
+    autoLogin: true
+    autoRelogin: false
+    notifyOnTurnEnd: true
+    notifyAllTurns: false
+    sendStartAck: false
+    windowHours: 20
+    rateLimitPerMinute: 10
+    maxSendAttempts: 3
+    maxFileBytes: 104857600
+    mediaRoots: []
+    textChunkChars: 1800

@@ -1,0 +1,72 @@
+{
+  "name": "dsh-wechat-channel",
+  "version": "0.2.0",
+  "description": "Bidirectional WeChat channel for DeepSeek Harness using the official iLink Bot API",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "wechat",
+    "weixin",
+    "ilink",
+    "clawbot"
+  ],
+  "author": "Iris Mei (https://github.com/iris-mei614)",
+  "license": "MIT",
+  "homepage": "https://github.com/iris-mei614/dsh-wechat-channel#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iris-mei614/dsh-wechat-channel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iris-mei614/dsh-wechat-channel/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "examples",
+    "安装与使用教程.md",
+    "CHANGELOG.md",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "check": "npm run typecheck && npm test && npm run smoke",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "schemastery": "^3.18.0",
+    "wechat-ilink-client": "0.1.0"
+  },
+  "optionalDependencies": {
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
