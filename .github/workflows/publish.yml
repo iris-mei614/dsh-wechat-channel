@@ -1,0 +1,42 @@
+# Publish to npm when a version tag (v*) is pushed.
+# Requires Trusted Publishing on npmjs.com for this repo + workflow filename.
+name: Publish Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  id-token: write # OIDC for npm Trusted Publishing
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Git tag v${TAG} does not match package.json version ${PKG}"
+            exit 1
+          fi
+          echo "Publishing ${PKG} from tag v${TAG}"
+
+      - name: Check (typecheck + tests + smoke)
+        run: npm run check
+
+      - name: Publish to npm
+        run: npm publish --access public
