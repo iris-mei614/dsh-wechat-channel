@@ -130,6 +130,19 @@ npm run smoke
 npm run check
 ```
 
+### Releasing (maintainers)
+
+Flow: work on `dev` → PR into protected `main` → tag `vX.Y.Z` matching `package.json` → GitHub Actions (`publish.yml`) publishes via npm Trusted Publishing.
+
+```bash
+git checkout main && git pull origin main
+node -p "require('./package.json').version"   # e.g. 0.2.1
+git tag v0.2.1
+git push origin v0.2.1
+# Watch Actions → Publish Package, then:
+npm view dsh-wechat-channel version
+```
+
 Layout:
 
 ```

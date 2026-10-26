@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- **Release pipeline.** Tag `v*` on `main` triggers GitHub Actions → npm Trusted
+  Publishing (`publish.yml`). Dropped unused `pnpm-lock.yaml` (CI uses npm).
+- Docs: maintainer release steps in README.
+
 ## 0.2.0
 
 - **Rename.** Package / Cordis plugin identity is now `dsh-wechat-channel`
