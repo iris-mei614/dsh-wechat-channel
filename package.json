@@ -1,15 +1,22 @@
 {
   "name": "dsh-wechat-channel",
-  "version": "0.2.1",
-  "description": "Bidirectional WeChat channel for DeepSeek Harness using the official iLink Bot API",
+  "version": "0.2.2",
+  "description": "把个人微信（iLink/ClawBot）接入 DeepSeek Harness 的双向通道 — Bidirectional WeChat channel for DSH using the official iLink Bot API",
   "keywords": [
+    "微信",
+    "微信机器人",
+    "个人微信",
+    "微信双向通道",
+    "微信接入",
     "deepseek-harness",
+    "deepseek",
     "dsh",
     "dsh-plugin",
     "wechat",
     "weixin",
     "ilink",
-    "clawbot"
+    "clawbot",
+    "wechat-bot"
   ],
   "author": "Iris Mei (https://github.com/iris-mei614)",
   "license": "MIT",
