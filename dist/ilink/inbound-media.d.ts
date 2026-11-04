@@ -1,7 +1,10 @@
 export type InboundMediaKind = 'image' | 'voice' | 'file' | 'video';
 export interface DownloadedInboundMedia {
     kind: InboundMediaKind;
-    data: Uint8Array;
+    data?: Uint8Array;
+    tempPath?: string;
+    cleanupDir?: string;
+    bytes?: number;
     /** Original filename when the protocol provides one (files). */
     fileName?: string;
 }
@@ -18,7 +21,7 @@ export declare function sniffImageMediaType(data: Uint8Array): 'image/png' | 'im
  * Download decryptable media items from a WeChat inbound message's raw item_list.
  * Text/voice-STT-only items are skipped.
  */
-export declare function downloadInboundMediaItems(rawItems: ReadonlyArray<unknown>, cdnBaseUrl: string): Promise<DownloadedInboundMedia[]>;
+export declare function downloadInboundMediaItems(rawItems: ReadonlyArray<unknown>, cdnBaseUrl: string, maxBytes?: number, stageOnDisk?: boolean, stagingRoot?: string): Promise<DownloadedInboundMedia[]>;
 /** Persist downloaded media under `destDir` (created if needed). */
 export declare function saveInboundMediaFiles(items: readonly DownloadedInboundMedia[], destDir: string, options?: {
     maxBytes: number;

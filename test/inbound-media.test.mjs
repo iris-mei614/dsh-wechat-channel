@@ -140,3 +140,59 @@ test('media-only inbound still creates a DSH turn', async () => {
     await cleanupDir(dir);
   }
 });
+
+test('repeated filenames never overwrite earlier inbound files', async () => {
+  const { mkdtemp, rm, symlink, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const dir = await mkdtemp(join(tmpdir(), 'inbound-collision-'));
+  try {
+    const first = await saveInboundMediaFiles([{ kind: 'file', fileName: 'a.txt', data: Uint8Array.of(1) }], dir);
+    const second = await saveInboundMediaFiles([{ kind: 'file', fileName: 'a.txt', data: Uint8Array.of(2) }], dir);
+    assert.notEqual(first[0].path, second[0].path);
+    assert.deepEqual([...await readFile(first[0].path)], [1]);
+    await writeFile(join(dir, 'target'), 'safe');
+    await symlink(join(dir, 'target'), join(dir, 'link.txt'));
+    await saveInboundMediaFiles([{ kind: 'file', fileName: 'link.txt', data: Uint8Array.of(3) }], dir);
+    assert.equal(await readFile(join(dir, 'target'), 'utf8'), 'safe');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('doctor command produces a report without credentials or user identifiers', async () => {
+  const { channel, dir, transport } = await makeChannel();
+  try {
+    await channel.start();
+    await channel.handleInbound(inbound({ text: '/doctor' }));
+    const report = await channel.diagnose();
+    assert.match(report, /状态存储：正常/);
+    assert.doesNotMatch(report, /bot-token-value|context-token-value|wx-user/);
+  } finally { await channel.stop(); await cleanupDir(dir); }
+});
+
+test('uncompleted inbox survives restart and is processed before polling', async () => {
+  const fixture = await makeChannel({ config: { defaultSessionId: 's1' } });
+  try {
+    await fixture.state.load();
+    fixture.state.update(data => { data.inboundQueue.push(inbound({ text: 'recover me', messageId: 98765 })); });
+    await fixture.state.flush();
+    await fixture.channel.start();
+    const { waitFor } = await import('./helpers.mjs');
+    assert.equal(await waitFor(() => fixture.bridge.delivered.length > 0), true);
+    assert.match(fixture.bridge.delivered[0].text, /recover me/);
+  } finally { await fixture.channel.stop(); await cleanupDir(fixture.dir); }
+});
+
+test('download rejects oversized streams before saving', async () => {
+  const { downloadInboundMediaItems } = await import('../dist/ilink/inbound-media.js');
+  const original = globalThis.fetch;
+  let cancelled = false;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull(controller) { controller.enqueue(new Uint8Array(64)); },
+    cancel() { cancelled = true; },
+  }));
+  try {
+    await assert.rejects(downloadInboundMediaItems([
+      { type: 2, image_item: { media: { encrypt_query_param: 'test' } } },
+    ], 'https://example.com', 8), /附件下载失败/);
+    assert.equal(cancelled, true);
+  } finally { globalThis.fetch = original; }
+});

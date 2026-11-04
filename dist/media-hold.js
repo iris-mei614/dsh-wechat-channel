@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 /** Words that flush a held media batch immediately (no extra caption). */
 const FLUSH_KEYWORDS = new Set([
     '开始',
@@ -45,7 +46,9 @@ export class MediaHoldBuffer {
         if (existing !== undefined)
             clearTimeout(existing.timer);
         const merged = {
+            batchId: existing?.batchId ?? batch.batchId ?? randomUUID(),
             userId: batch.userId,
+            sessionId: existing?.sessionId ?? batch.sessionId,
             attachments: [...(existing?.attachments ?? []), ...batch.attachments],
             mediaText: [existing?.mediaText, batch.mediaText].filter((part) => part && part.trim() !== '').join('\n'),
             wasFirstInbound: existing?.wasFirstInbound === true || batch.wasFirstInbound,
@@ -54,12 +57,13 @@ export class MediaHoldBuffer {
         };
         const timer = setTimeout(() => {
             this.pending.delete(batch.userId);
-            void Promise.resolve(this.options.onTimeout(merged)).catch(() => { });
-        }, Math.max(0, this.options.holdMs));
+            void Promise.resolve(this.options.onTimeout(merged)).then(() => this.changed()).catch(() => { });
+        }, Math.max(0, merged.createdAt + this.options.holdMs - this.options.clock.now()));
         if (typeof timer === 'object' && timer !== null && 'unref' in timer && typeof timer.unref === 'function') {
             timer.unref();
         }
         this.pending.set(batch.userId, { ...merged, timer });
+        this.changed();
     }
     /** Take and clear a held batch (e.g. when caption text arrives). */
     take(userId) {
@@ -69,7 +73,11 @@ export class MediaHoldBuffer {
         clearTimeout(entry.timer);
         this.pending.delete(userId);
         const { timer: _timer, ...batch } = entry;
+        this.changed();
         return batch;
+    }
+    changed() {
+        this.options.onChange?.([...this.pending.keys()].map(userId => this.get(userId)));
     }
     clear(userId) {
         this.take(userId);

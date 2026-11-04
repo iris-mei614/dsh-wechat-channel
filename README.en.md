@@ -159,3 +159,22 @@ src/
 ## License
 
 MIT. See [LICENSE](./LICENSE).
+
+
+### Diagnostics and recovery
+
+Send `/doctor` in WeChat or call `wechat_doctor` from the agent. The report checks login, polling, session, state storage and queues without tokens, QR URLs, user IDs, paths or message content. It attempts a state write and does not send probe messages.
+
+Inbound batches are persisted before processing and resumed after restart. Delivery is at least once: a crash after DSH accepts a message but before completion is recorded can cause redelivery. Downloads are limited to 20 items per message and `maxFileBytes` total; existing files are never overwritten.
+
+
+Diagnostics also probe workspace write access, available disk space, Node.js and required host services. Call `wechat_doctor({"export": true})` to export a private, sanitized text report. Workspace probing creates and removes a temporary file.
+
+Delivery failures retain the original session and attachments across restarts. Held media, outgoing text chunks and attachment progress are durable. Inbound messages failing three times are isolated; `/retry` restores them. Downloads and AES decryption use temporary files, cleaned on success or failure. Attachment errors identify the failed item and category; resend the media batch after failure.
+
+See [Contributing](CONTRIBUTING.md), [Security](SECURITY.md), and [Compatibility and manual verification](COMPATIBILITY.md).
+
+
+Recovered media tasks are rechecked against the current authorized user. Revoked users' batches are quarantined and never executed automatically. Media is acknowledged by batch; `/steer` preserves unrelated held attachments. Background saves and explicit flushes share a single serialized writer.
+
+Transient notice failures back off exponentially from 30 seconds and are quarantined after three failures. Invalid attachments are quarantined immediately so later results can proceed. After fixing the file or network, use `/retry` (failed DSH delivery first, failed inbound next, failed notice last). `/doctor` reports quarantine counts; quarantines survive restart.

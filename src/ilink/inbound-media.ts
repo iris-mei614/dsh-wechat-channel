@@ -1,12 +1,17 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { boundedDownload } from './bounded-download.js';
+import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile, readFile, rm, copyFile, constants } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
-import { downloadMediaFromItem, MessageItemType } from 'wechat-ilink-client';
+import { buildCdnDownloadUrl, MessageItemType } from 'wechat-ilink-client';
 
 export type InboundMediaKind = 'image' | 'voice' | 'file' | 'video';
 
 export interface DownloadedInboundMedia {
   kind: InboundMediaKind;
-  data: Uint8Array;
+  data?: Uint8Array;
+  tempPath?: string;
+  cleanupDir?: string;
+  bytes?: number;
   /** Original filename when the protocol provides one (files). */
   fileName?: string;
 }
@@ -68,8 +73,16 @@ function safeFileName(name: string | undefined, kind: InboundMediaKind, mediaTyp
 export async function downloadInboundMediaItems(
   rawItems: ReadonlyArray<unknown>,
   cdnBaseUrl: string,
+  maxBytes = 100 * 1024 * 1024,
+  stageOnDisk = false,
+  stagingRoot?: string,
 ): Promise<DownloadedInboundMedia[]> {
   const out: DownloadedInboundMedia[] = [];
+  const mediaItems = rawItems.filter((item: any) => item && [2, 3, 4, 5].includes(item.type) && item[['', '', 'image_item', 'voice_item', 'file_item', 'video_item'][item.type] ?? '']?.media?.encrypt_query_param);
+  if (mediaItems.length > 20) throw new Error('单条消息附件过多（最多 20 项）');
+  let total = 0;
+  let mediaIndex = 0;
+  const failures: string[] = [];
   for (const item of rawItems) {
     if (typeof item !== 'object' || item === null) continue;
     const typed = item as { type?: number };
@@ -81,17 +94,32 @@ export async function downloadInboundMediaItems(
     ) {
       continue;
     }
+    mediaIndex += 1;
     try {
-      const downloaded = await downloadMediaFromItem(item as any, cdnBaseUrl);
-      if (downloaded === null) continue;
-      out.push({
-        kind: downloaded.kind as InboundMediaKind,
-        data: downloaded.data instanceof Uint8Array ? downloaded.data : new Uint8Array(downloaded.data),
-        ...(typeof (downloaded as any).fileName === 'string' ? { fileName: (downloaded as any).fileName } : {}),
-      });
-    } catch {
-      // Caller logs aggregate failures; keep going for remaining items.
+      const raw = item as any;
+      const kind = typed.type === MessageItemType.IMAGE ? 'image' : typed.type === MessageItemType.FILE ? 'file'
+        : typed.type === MessageItemType.VIDEO ? 'video' : 'voice';
+      const payload = raw[`${kind}_item`];
+      if (!payload?.media?.encrypt_query_param) continue;
+      const key = kind === 'image' && payload.aeskey
+        ? Buffer.from(payload.aeskey, 'hex').toString('base64') : payload.media.aes_key;
+      if (kind !== 'image' && !key) throw new Error('附件解密失败：缺少密钥');
+      const downloaded = await boundedDownload(buildCdnDownloadUrl(payload.media.encrypt_query_param, cdnBaseUrl), key, maxBytes - total, stagingRoot);
+      total += downloaded.bytes;
+      if (stageOnDisk) {
+        out.push({ kind, tempPath: downloaded.path, cleanupDir: downloaded.cleanupDir, bytes: downloaded.bytes, fileName: payload.file_name });
+      } else {
+        try { out.push({ kind, data: await readFile(downloaded.path), fileName: payload.file_name }); }
+        finally { await rm(downloaded.cleanupDir, { recursive: true, force: true }); }
+      }
+    } catch (error) {
+      const reason = error instanceof Error && /大小上限|解密失败|HTTP/.test(error.message) ? error.message : '网络连接失败或下载超时';
+      failures.push(`第 ${mediaIndex} 个：${reason}`);
     }
+  }
+  if (failures.length > 0) {
+    for (const entry of out) if (entry.cleanupDir) await rm(entry.cleanupDir, { recursive: true, force: true });
+    throw new Error(`附件下载失败：成功 ${out.length} 个，失败 ${failures.length} 个（${failures.join('；')}）。本批次未投递，请重新发送。`);
   }
   return out;
 }
@@ -104,22 +132,39 @@ export async function saveInboundMediaFiles(
 ): Promise<SavedInboundMedia[]> {
   await mkdir(destDir, { recursive: true, mode: 0o700 });
   const saved: SavedInboundMedia[] = [];
-  let index = 0;
   for (const item of items) {
-    if (item.data.byteLength <= 0) continue;
-    if (item.data.byteLength > options.maxBytes) {
-      throw new Error(`入站${item.kind}超过大小上限（${item.data.byteLength} > ${options.maxBytes}）`);
+    const bytes = item.data?.byteLength ?? item.bytes ?? 0;
+    if (bytes <= 0) continue;
+    if (bytes > options.maxBytes) {
+      throw new Error(`入站${item.kind}超过大小上限（${bytes} > ${options.maxBytes}）`);
     }
-    const mediaType = item.kind === 'image' ? sniffImageMediaType(item.data) : undefined;
+    let header = item.data;
+    if (!header && item.tempPath) {
+      const { open } = await import('node:fs/promises');
+      const handle = await open(item.tempPath, 'r');
+      try { header = Buffer.alloc(16); await handle.read(header, 0, 16, 0); } finally { await handle.close(); }
+    }
+    const mediaType = item.kind === 'image' && header ? sniffImageMediaType(header) : undefined;
+    const persist = async (target: string) => {
+      if (item.tempPath) await copyFile(item.tempPath, target, constants.COPYFILE_EXCL);
+      else if (item.data) await writeFile(target, item.data, { mode: 0o600, flag: 'wx' });
+      else throw new Error('附件数据缺失');
+    };
     const base = safeFileName(item.fileName, item.kind, mediaType);
-    const unique = saved.some((entry) => entry.fileName === base) ? `${index}-${base}` : base;
-    index += 1;
-    const path = join(destDir, unique);
-    await writeFile(path, item.data, { mode: 0o600 });
+    let unique = base;
+    let path = join(destDir, unique);
+    try {
+      await persist(path);
+    } catch (error: any) {
+      if (error?.code !== 'EEXIST') throw error;
+      unique = `${randomUUID()}-${base}`;
+      path = join(destDir, unique);
+      await persist(path);
+    }
     saved.push({
       kind: item.kind,
       path,
-      bytes: item.data.byteLength,
+      bytes: bytes,
       fileName: unique,
       ...(mediaType === undefined ? {} : { mediaType }),
     });

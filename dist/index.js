@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { Config, resolveConfig } from './config.js';
 import { Redactor, createSafeLogger, describeError } from './log.js';
 import { StateStore } from './state.js';
@@ -45,6 +46,7 @@ export function apply(ctx, rawConfig) {
     const state = new StateStore(config.stateDir);
     const bridge = new DshAgentBridge(ctx, config, logger);
     const transport = new WechatIlinkTransport({
+        stagingRoot: join(config.stateDir, 'media-tmp'),
         baseUrl: config.baseUrl,
         cdnBaseUrl: config.cdnBaseUrl,
         log: (message, ...params) => logger.warn(message, ...params),

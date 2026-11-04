@@ -12,6 +12,7 @@ export interface CommandRuntimeDeps {
   setActiveSession: (sessionId: string, clearList?: boolean) => void;
   /** Mark a freshly created session so the first followup can name it. */
   noteUntitledSession: (sessionId: string) => void;
+  diagnose: () => Promise<string>;
   formatStatus: () => Promise<string>;
   deliverText: (
     userId: string,
@@ -131,6 +132,10 @@ export async function runWechatCommand(
         }
         deps.setActiveSession(verified, false);
         await deps.sendReply(userId, `已切过去：\n${verified}`);
+        return;
+      }
+      case 'doctor': {
+        await deps.sendReply(userId, await deps.diagnose());
         return;
       }
       case 'status': {

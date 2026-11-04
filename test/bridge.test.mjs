@@ -244,3 +244,23 @@ test('cancelSession and sessionStatus reflect the live registry', async () => {
   assert.equal(missing.exists, false);
   await bridge.dispose();
 });
+
+test('replayed WeChat message is deduplicated against session history and pending inbox', async () => {
+  const host = makeHost();
+  const agent = makeLive('s1');
+  host.live.set('s1', agent);
+  const bridge = makeBridge(host);
+  try {
+    const source = { userId: 'wx-user', messageId: 'durable-message' };
+    await bridge.deliver('s1', 'hello', 'followup', source);
+    const accepted = agent.calls.followup[0];
+    agent.session.events = [{ type: 'message', data: { message: accepted } }];
+    const result = await bridge.deliver('s1', 'hello', 'followup', source);
+    assert.equal(result.messageId, accepted.id);
+    assert.equal(agent.calls.followup.length, 1);
+    agent.session.events = [];
+    agent.inbox = { nextTurn: [accepted], nextStep: [] };
+    await bridge.deliver('s1', 'hello', 'followup', source);
+    assert.equal(agent.calls.followup.length, 1);
+  } finally { await bridge.dispose(); }
+});

@@ -93,6 +93,10 @@ export async function runWechatCommand(deps, userId, name, args) {
                 await deps.sendReply(userId, `已切过去：\n${verified}`);
                 return;
             }
+            case 'doctor': {
+                await deps.sendReply(userId, await deps.diagnose());
+                return;
+            }
             case 'status': {
                 await deps.sendReply(userId, await deps.formatStatus());
                 return;

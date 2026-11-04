@@ -8,6 +8,8 @@ export interface ParsedCommand {
 
 const ALIASES: Record<string, string> = {
   // English
+  doctor: 'doctor',
+  诊断: 'doctor',
   help: 'help',
   new: 'new',
   list: 'list',
@@ -48,7 +50,7 @@ export function parseCommand(text: string): ParsedCommand | null {
 
   if (!trimmed.startsWith('/')) {
     const bare = ALIASES[trimmed.toLowerCase()] ?? ALIASES[trimmed];
-    if (bare === 'retry' || bare === 'help' || bare === 'status' || bare === 'clear' || bare === 'list') {
+    if (bare === 'doctor' || bare === 'retry' || bare === 'help' || bare === 'status' || bare === 'clear' || bare === 'list') {
       return { name: bare, args: '' };
     }
     return null;
@@ -68,6 +70,7 @@ export const COMMAND_HELP = [
   '/list — 看看有哪些会话可以切换',
   '/switch <序号|ID> — 切到指定会话',
   '/bind <sessionId> — 绑定一个已有会话',
+  '/doctor 或「诊断」— 检查连接、会话与状态存储',
   '/status — 通道是否正常、会话与待补发',
   '/model — 查看当前模型；/model <名> 尝试切换',
   '/stop — 停下正在做的任务',

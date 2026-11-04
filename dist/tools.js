@@ -120,7 +120,18 @@ export function registerTools(ctx, channel, logger) {
             return channel.beginLogin();
         },
     };
-    for (const tool of [sendTool, statusTool, loginTool]) {
+    const doctorTool = {
+        name: 'wechat_doctor',
+        description: '生成脱敏的微信通道诊断报告，检查登录、轮询、会话与状态存储。',
+        parameters: { type: 'object', additionalProperties: false, properties: { export: { type: 'boolean', description: '将脱敏报告保存为本地文件' } } },
+        output: { schema: { type: 'object', properties: { report: { type: 'string' }, path: { type: 'string' } }, required: ['report'] },
+            render(_args, value) { return text(value.report + (value.path ? `\n报告文件：${value.path}` : '')); } },
+        async execute(args) {
+            const report = await channel.diagnose();
+            return { report, ...(args?.export === true ? { path: await channel.exportDiagnostics() } : {}) };
+        },
+    };
+    for (const tool of [sendTool, statusTool, loginTool, doctorTool]) {
         try {
             disposers.push(ctx.tools.register(tool));
             logger.info('已注册工具 %s', tool.name);

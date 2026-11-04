@@ -26,12 +26,12 @@ function pluginCtx() {
   };
 }
 
-test('apply registers the three tools and a lifecycle effect', async () => {
+test('apply registers the four tools and a lifecycle effect', async () => {
   const dir = await tempDir();
   try {
     const ctx = pluginCtx();
     apply(ctx, { stateDir: dir, autoLogin: false, defaultSessionId: 'session-x' });
-    assert.deepEqual(ctx.toolsImpl.map((tool) => tool.name).sort(), ['wechat_login', 'wechat_send', 'wechat_status']);
+    assert.deepEqual(ctx.toolsImpl.map((tool) => tool.name).sort(), ['wechat_doctor', 'wechat_login', 'wechat_send', 'wechat_status']);
     assert.equal(ctx.effectsImpl.length, 1);
 
     const disposer = await ctx.effectsImpl[0]();

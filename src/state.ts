@@ -1,6 +1,20 @@
-import { chmod, mkdir, readFile, rename, writeFile, copyFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, writeFile, copyFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import type { HeldMediaBatch } from './media-hold.js';
+import type { DeliveredAttachment } from './types.js';
+import type { InboundMessage } from './types.js';
 import { randomUUID } from 'node:crypto';
+
+export interface RetryDelivery {
+  sessionId: string;
+  text: string;
+  mode: 'followup' | 'steer' | 'inject';
+  sourceMessageId: string;
+  attachments: DeliveredAttachment[];
+  isFirstInbound?: boolean;
+  createdAt: number;
+}
+export interface FailedInbound { message: InboundMessage; attempts: number; failedAt: number; reason?: string; }
 
 export interface ContextTokenRecord {
   token: string;
@@ -13,6 +27,10 @@ export interface PendingNotice {
   text: string;
   files: Array<{ path: string; description?: string }>;
   createdAt: number;
+  replayHeaderSent?: boolean;
+  attempts?: number;
+  nextAttemptAt?: number;
+  quarantined?: boolean;
 }
 
 export interface ListEntry {
@@ -23,6 +41,12 @@ export interface ListEntry {
 export interface ChannelStateData {
   version: 1;
   syncBuf: string;
+  inboundQueue: InboundMessage[];
+  inboundAttempts: Record<string, number>;
+  failedInbound: FailedInbound[];
+  retryDeliveries: Record<string, RetryDelivery>;
+  heldMedia: HeldMediaBatch[];
+  quarantinedMedia: Array<{ batch: HeldMediaBatch; quarantinedAt: number }>;
   activeSessionId: string;
   ownerUserId: string;
   accountId: string;
@@ -30,6 +54,7 @@ export interface ChannelStateData {
   lastInboundAt: number;
   contextTokens: Record<string, ContextTokenRecord>;
   pendingNotices: PendingNotice[];
+  droppedNotices: number;
   seenMessages: string[];
   listSnapshot: ListEntry[];
   counters: {
@@ -43,6 +68,12 @@ export function emptyState(): ChannelStateData {
   return {
     version: 1,
     syncBuf: '',
+    inboundQueue: [],
+    inboundAttempts: {},
+    failedInbound: [],
+    retryDeliveries: {},
+    heldMedia: [],
+    quarantinedMedia: [],
     activeSessionId: '',
     ownerUserId: '',
     accountId: '',
@@ -50,6 +81,7 @@ export function emptyState(): ChannelStateData {
     lastInboundAt: 0,
     contextTokens: {},
     pendingNotices: [],
+    droppedNotices: 0,
     seenMessages: [],
     listSnapshot: [],
     counters: { inbound: 0, outbound: 0, errors: 0 },
@@ -95,6 +127,10 @@ export function normalizeState(input: unknown): ChannelStateData {
         : [];
       if (text === '' && files.length === 0) continue;
       pendingNotices.push({
+        replayHeaderSent: item.replayHeaderSent === true,
+        attempts: Math.max(0, Math.floor(asNumber(item.attempts))),
+        nextAttemptAt: Math.max(0, asNumber(item.nextAttemptAt)),
+        quarantined: item.quarantined === true,
         id: asString(item.id, randomUUID()),
         sessionId: asString(item.sessionId),
         text,
@@ -114,6 +150,12 @@ export function normalizeState(input: unknown): ChannelStateData {
   return {
     version: 1,
     syncBuf: asString(raw.syncBuf),
+    inboundQueue: Array.isArray(raw.inboundQueue) ? raw.inboundQueue.filter((item: any) => item && typeof item === 'object' && typeof item.from === 'string') : [],
+    inboundAttempts: raw.inboundAttempts && typeof raw.inboundAttempts === 'object' ? raw.inboundAttempts : {},
+    failedInbound: Array.isArray(raw.failedInbound) ? raw.failedInbound.filter((v: any) => v?.message && typeof v.message.from === 'string') : [],
+    retryDeliveries: raw.retryDeliveries && typeof raw.retryDeliveries === 'object' ? raw.retryDeliveries : {},
+    heldMedia: Array.isArray(raw.heldMedia) ? raw.heldMedia.filter((v: any) => typeof v?.userId === 'string' && Array.isArray(v.attachments)) : [],
+    quarantinedMedia: Array.isArray(raw.quarantinedMedia) ? raw.quarantinedMedia.filter((v: any) => typeof v?.batch?.userId === 'string' && Array.isArray(v.batch.attachments)) : [],
     activeSessionId: asString(raw.activeSessionId),
     ownerUserId: asString(raw.ownerUserId),
     accountId: asString(raw.accountId),
@@ -121,6 +163,7 @@ export function normalizeState(input: unknown): ChannelStateData {
     lastInboundAt: asNumber(raw.lastInboundAt),
     contextTokens,
     pendingNotices: pendingNotices.slice(-MAX_PENDING),
+    droppedNotices: asNumber(raw.droppedNotices) + Math.max(0, pendingNotices.length - MAX_PENDING),
     seenMessages,
     listSnapshot,
     counters: {
@@ -213,7 +256,10 @@ export class StateStore {
     const entry: PendingNotice = { ...notice, id: randomUUID(), createdAt: Date.now() };
     this.update((data) => {
       data.pendingNotices.push(entry);
-      if (data.pendingNotices.length > MAX_PENDING) data.pendingNotices.splice(0, data.pendingNotices.length - MAX_PENDING);
+      if (data.pendingNotices.length > MAX_PENDING) {
+        data.droppedNotices += data.pendingNotices.length - MAX_PENDING;
+        data.pendingNotices.splice(0, data.pendingNotices.length - MAX_PENDING);
+      }
     });
     return entry;
   }
@@ -226,8 +272,8 @@ export class StateStore {
     });
   }
 
-  takePendingNotices(limit: number): PendingNotice[] {
-    return this.data.pendingNotices.slice(0, limit);
+  takePendingNotices(limit: number, now = Date.now()): PendingNotice[] {
+    return this.data.pendingNotices.filter(notice => !notice.quarantined && (notice.nextAttemptAt ?? 0) <= now).slice(0, limit);
   }
 
   private scheduleSave(): void {
@@ -253,12 +299,16 @@ export class StateStore {
 
   private async write(): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
-    const temp = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
+    const temp = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
     const body = `${JSON.stringify(this.data, null, 2)}\n`;
-    await writeFile(temp, body, { encoding: 'utf8', mode: 0o600 });
-    await chmod(temp, 0o600).catch(() => {});
-    await rename(temp, this.filePath);
-    await chmod(this.filePath, 0o600).catch(() => {});
+    try {
+      await writeFile(temp, body, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      await chmod(temp, 0o600).catch(() => {});
+      await rename(temp, this.filePath);
+      await chmod(this.filePath, 0o600).catch(() => {});
+    } finally {
+      await rm(temp, { force: true }).catch(() => {});
+    }
   }
 
   /** Last background save failure, if any. State remains in memory. */
@@ -267,21 +317,11 @@ export class StateStore {
   }
 
   async flush(): Promise<void> {
-    if (!this.loaded) return;
-    this.dirty = true;
-    if (this.saving !== undefined) {
-      await this.saving;
-      if (this.dirty) await this.flush();
-      return;
-    }
-    try {
-      await this.write();
-      this.dirty = false;
-      this.saveFailure = undefined;
-    } catch (error) {
-      this.saveFailure = error;
-      throw error;
-    }
+    if (!this.loaded || this.closed) return;
+    // Both explicit flushes and background updates use the same worker.
+    this.scheduleSave();
+    while (this.saving !== undefined) await this.saving;
+    if (this.saveFailure !== undefined) throw this.saveFailure;
   }
 
   async close(): Promise<void> {
