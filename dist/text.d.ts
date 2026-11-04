@@ -1,3 +1,13 @@
+/**
+ * Make single line breaks visible on desktop WeChat.
+ *
+ * Phone WeChat draws iLink bot text as plain text, so `\n` is a line break.
+ * Desktop WeChat draws the same payload as Markdown: a lone `\n` is a soft
+ * break and shows up as a space, and trailing spaces are discarded, so a
+ * Markdown hard break does not survive. A blank line (`\n\n`) is a paragraph
+ * and renders on both clients. Fenced code and Markdown tables stay intact.
+ */
+export declare function hardenWechatLineBreaks(text: string): string;
 /** Split text into WeChat-sized chunks without cutting UTF-16 surrogate pairs. */
 export declare function splitText(text: string, maxChars: number): string[];
 /** Truncate a label for command output. */

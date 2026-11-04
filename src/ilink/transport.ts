@@ -5,6 +5,7 @@ import {
 } from 'wechat-ilink-client';
 import type { IlinkCredentials, IlinkTransport, InboundMessage, LoginQr, PollResponse, QrStatus } from '../types.js';
 import { classifyMedia } from '../media.js';
+import { hardenWechatLineBreaks } from '../text.js';
 import { sendVoice } from './audio.js';
 import { sendFileMessage, sendImageMessage, sendVideoMessage, uploadMedia } from './media.js';
 import { downloadInboundMediaItems } from './inbound-media.js';
@@ -116,7 +117,7 @@ export class WechatIlinkTransport implements IlinkTransport {
   }
 
   async sendText(to: string, text: string, contextToken: string): Promise<void> {
-    await sendTextMessage(this.requireApi(), to, text, contextToken);
+    await sendTextMessage(this.requireApi(), to, hardenWechatLineBreaks(text), contextToken);
   }
 
   async sendMedia(to: string, filePath: string, caption: string | undefined, contextToken: string): Promise<void> {
@@ -124,7 +125,7 @@ export class WechatIlinkTransport implements IlinkTransport {
     // Captions are a separate iLink text message. The channel normally sends
     // them through its own rate-limited queue and passes undefined here.
     if (caption !== undefined && caption !== '') {
-      await sendTextMessage(api, to, caption, contextToken);
+      await sendTextMessage(api, to, hardenWechatLineBreaks(caption), contextToken);
     }
 
     const kind = classifyMedia(filePath);

@@ -1,3 +1,44 @@
+/**
+ * Make single line breaks visible on desktop WeChat.
+ *
+ * Phone WeChat draws iLink bot text as plain text, so `\n` is a line break.
+ * Desktop WeChat draws the same payload as Markdown: a lone `\n` is a soft
+ * break and shows up as a space, and trailing spaces are discarded, so a
+ * Markdown hard break does not survive. A blank line (`\n\n`) is a paragraph
+ * and renders on both clients. Fenced code and Markdown tables stay intact.
+ */
+export function hardenWechatLineBreaks(text) {
+    const source = text.replace(/\r\n/g, '\n');
+    let result = '';
+    let index = 0;
+    while (index < source.length) {
+        const fence = source.indexOf('```', index);
+        const plainEnd = fence === -1 ? source.length : fence;
+        result += hardenPlainLineBreaks(source.slice(index, plainEnd));
+        if (fence === -1)
+            break;
+        const close = source.indexOf('```', fence + 3);
+        if (close === -1) {
+            result += source.slice(fence);
+            break;
+        }
+        result += source.slice(fence, close + 3);
+        index = close + 3;
+    }
+    return result;
+}
+function hardenPlainLineBreaks(text) {
+    return text.replace(/([^\n])\n(?!\n)/g, (match, prev, offset, whole) => {
+        const lineStart = whole.lastIndexOf('\n', offset - 1) + 1;
+        const line = whole.slice(lineStart, offset + 1);
+        const nextStart = offset + 2;
+        const nextBreak = whole.indexOf('\n', nextStart);
+        const nextLine = whole.slice(nextStart, nextBreak === -1 ? whole.length : nextBreak);
+        if (line.trimStart().startsWith('|') && nextLine.trimStart().startsWith('|'))
+            return match;
+        return `${prev}\n\n`;
+    });
+}
 /** Split text into WeChat-sized chunks without cutting UTF-16 surrogate pairs. */
 export function splitText(text, maxChars) {
     const source = text.replace(/\r\n/g, '\n').trimEnd();
