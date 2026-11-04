@@ -29,14 +29,14 @@ test('transport sends text with the inbound context_token and bearer token', asy
   try {
     const transport = new WechatIlinkTransport({ baseUrl, cdnBaseUrl: baseUrl });
     transport.setCredentials({ token: 'secret-token', accountId: 'bot@im.bot', baseUrl });
-    await transport.sendText('wx-user', '你好', 'context-token');
+    await transport.sendText('wx-user', '第一行\n第二行', 'context-token');
     assert.equal(requests.length, 1);
     assert.match(requests[0].url, /\/ilink\/bot\/sendmessage$/);
     assert.equal(requests[0].headers.authorization, 'Bearer secret-token');
     assert.equal(requests[0].headers.authorizationtype, 'ilink_bot_token');
     assert.equal(requests[0].json.msg.context_token, 'context-token');
     assert.equal(requests[0].json.msg.to_user_id, 'wx-user');
-    assert.equal(requests[0].json.msg.item_list[0].text_item.text, '你好');
+    assert.equal(requests[0].json.msg.item_list[0].text_item.text, '第一行\n\n第二行');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

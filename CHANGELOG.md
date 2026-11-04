@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Keep line breaks visible on desktop WeChat. The desktop client renders bot text as Markdown and shows a single newline as a space; outbound text now uses a blank line for each break. Phone WeChat, fenced code, and Markdown tables are unchanged.
+
 ## 0.3.0
 
 - Add `/doctor`, the Chinese `诊断` shortcut, and `wechat_doctor` with private, sanitized report export.

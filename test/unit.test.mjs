@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { splitText, truncate } from '../dist/text.js';
+import { hardenWechatLineBreaks, splitText, truncate } from '../dist/text.js';
 import { parseCommand, formatSessionList, resolveSwitchArgument } from '../dist/commands.js';
 import { formatWechatSessionTitle, summarizeForSessionTitle } from '../dist/session-title.js';
 import { resolveConfig } from '../dist/config.js';
@@ -11,6 +11,16 @@ import { RateLimiter } from '../dist/rate-limit.js';
 import { validateMediaFile, classifyMedia, isPathWithin } from '../dist/media.js';
 import { inspectWav } from '../dist/ilink/audio.js';
 import { tempDir, cleanupDir } from './helpers.mjs';
+
+test('hardenWechatLineBreaks turns single newlines into paragraphs for desktop WeChat', () => {
+  assert.equal(hardenWechatLineBreaks('第一行\n第二行'), '第一行\n\n第二行');
+  assert.equal(hardenWechatLineBreaks('段落一\n\n段落二'), '段落一\n\n段落二');
+  assert.equal(
+    hardenWechatLineBreaks('说明\n```\nline1\nline2\n```\n结尾'),
+    '说明\n\n```\nline1\nline2\n```\n结尾',
+  );
+  assert.equal(hardenWechatLineBreaks('| a | b |\n| --- | --- |\n下一行'), '| a | b |\n| --- | --- |\n\n下一行');
+});
 
 test('splitText respects chunk size and keeps content', () => {
   const source = `${'第一段。'.repeat(400)}\n第二段`;
