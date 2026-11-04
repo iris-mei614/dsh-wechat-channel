@@ -1,5 +1,8 @@
+import { drainInbox } from './inbox-runtime.js';
+import { inspectWorkspace } from './diagnostics.js';
+import { deliverNotice } from './notice-delivery.js';
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, chmod } from 'node:fs/promises';
+import { mkdir, writeFile, chmod, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describeError } from '../log.js';
 import { OutboundQueue, RateLimiter, realClock } from '../rate-limit.js';
@@ -56,7 +59,6 @@ export class WechatChannel {
     windowWarnedForInboundAt = 0;
     /** Sessions created from WeChat that still need a first-message title. */
     pendingWechatTitles = new Set();
-    lastRetryable = new Map();
     progress;
     loginPage;
     mediaHold;
@@ -90,7 +92,25 @@ export class WechatChannel {
         this.mediaHold = new MediaHoldBuffer({
             holdMs: deps.config.inboundMediaHoldMs,
             clock: this.clock,
-            onTimeout: (batch) => this.flushHeldMedia(batch, '请分析用户通过微信发来的媒体。'),
+            onChange: (batches) => {
+                if (this.started)
+                    this.state.update(data => {
+                        for (const batch of batches) {
+                            const index = data.heldMedia.findIndex(entry => entry.userId === batch.userId && (entry.batchId
+                                ? entry.batchId === batch.batchId
+                                : entry.sourceMessageId === batch.sourceMessageId));
+                            if (index < 0)
+                                data.heldMedia.push(batch);
+                            else
+                                data.heldMedia[index] = batch;
+                        }
+                    });
+            },
+            onTimeout: (batch) => {
+                const task = this.flushHeldMedia(batch, '请分析用户通过微信发来的媒体。');
+                this.track(task);
+                return task;
+            },
         });
     }
     get signal() {
@@ -105,6 +125,15 @@ export class WechatChannel {
         this.started = true;
         this.abortController = new AbortController();
         await this.state.load();
+        // Staging files are never referenced by durable media records.
+        await rm(join(this.config.stateDir, 'media-tmp'), { recursive: true, force: true });
+        for (const batch of [...this.state.get().heldMedia]) {
+            if (this.isAllowedUser(batch.userId))
+                this.mediaHold.hold(batch);
+            else
+                this.quarantineMedia(batch);
+        }
+        await this.state.flush();
         if (this.config.defaultSessionId !== '' && this.state.get().activeSessionId === '') {
             this.state.update((data) => {
                 data.activeSessionId = this.config.defaultSessionId;
@@ -116,7 +145,7 @@ export class WechatChannel {
             });
         }
         this.unsubscribeTurn = this.bridge.onTurnComplete((result) => {
-            void this.onTurnComplete(result);
+            this.track(this.onTurnComplete(result));
         });
         if (typeof this.bridge.onTurnActivity === 'function') {
             this.unsubscribeActivity = this.bridge.onTurnActivity((info) => {
@@ -161,8 +190,9 @@ export class WechatChannel {
         this.unsubscribeActivity?.();
         this.unsubscribeActivity = undefined;
         this.progress.stopAll();
+        const held = [...this.state.get().heldMedia];
         this.mediaHold.clearAll();
-        this.lastRetryable.clear();
+        this.state.update(data => { data.heldMedia = held; });
         this.pendingWechatTitles.clear();
         await this.loginPage.stop().catch(() => { });
         this.abortController?.abort();
@@ -182,6 +212,8 @@ export class WechatChannel {
                 new Promise((resolve) => setTimeout(resolve, 1_000)),
             ]);
         }
+        await this.inboundTail;
+        await Promise.allSettled([...this.backgroundTasks]);
         await this.transport.dispose();
         await this.state.close();
     }
@@ -229,6 +261,9 @@ export class WechatChannel {
             }
             this.status = 'connected';
             try {
+                await drainInbox(this.state, message => this.handleInbound(message), () => this.clock.now(), signal, error => this.noteError(error), error => this.redactor.redact(describeError(error)));
+                if (signal.aborted)
+                    break;
                 const response = await this.transport.getUpdates(this.state.get().syncBuf, this.pollTimeoutMs, signal);
                 this.lastPollAt = this.clock.now();
                 await this.maybeWarnWindowExpiry().catch(() => { });
@@ -243,24 +278,13 @@ export class WechatChannel {
                     throw new Error(`getupdates errcode=${response.errcode} ${response.errmsg ?? ''}`.trim());
                 }
                 const messages = Array.isArray(response.msgs) ? response.msgs : [];
-                for (const message of messages) {
-                    try {
-                        await this.handleInbound(message);
-                    }
-                    catch (error) {
-                        this.noteError(error);
-                        this.logger.error('处理入站消息失败：%s', describeError(error));
-                    }
-                }
-                if (typeof response.get_updates_buf === 'string') {
-                    this.state.update((data) => {
+                // Persist the batch with its cursor before executing any message.
+                this.state.update(data => {
+                    data.inboundQueue.push(...messages);
+                    if (typeof response.get_updates_buf === 'string')
                         data.syncBuf = response.get_updates_buf;
-                    });
-                }
+                });
                 await this.state.flush();
-                if (this.state.lastSaveFailure !== undefined) {
-                    this.logger.warn('状态落盘失败（内存状态继续使用）：%s', describeError(this.state.lastSaveFailure));
-                }
                 backoff = 1_000;
             }
             catch (error) {
@@ -316,7 +340,22 @@ export class WechatChannel {
             this.logger.info('首次入站，已绑定微信用户 %s', userId);
         }
     }
+    inboundTail = Promise.resolve();
     async handleInbound(message) {
+        const task = this.inboundTail.then(async () => {
+            const key = message.messageId !== undefined ? `mid:${message.from}:${message.messageId}`
+                : message.clientId !== undefined ? `cid:${message.from}:${message.clientId}` : '';
+            if (key && this.state.get().seenMessages.includes(key))
+                return;
+            await this.processInbound(message);
+            if (key && message.from && this.isAllowedUser(message.from))
+                this.state.markSeen(key);
+            await this.state.flush();
+        });
+        this.inboundTail = task.catch(() => { });
+        return task;
+    }
+    async processInbound(message) {
         if (message.messageType !== 1)
             return;
         if (typeof message.groupId === 'string' && message.groupId !== '') {
@@ -331,7 +370,7 @@ export class WechatChannel {
             : message.clientId !== undefined
                 ? `cid:${userId}:${message.clientId}`
                 : '';
-        if (seenKey !== '' && !this.state.markSeen(seenKey))
+        if (seenKey !== '' && this.state.get().seenMessages.includes(seenKey))
             return;
         if (!this.isAllowedUser(userId)) {
             this.logger.warn('忽略未授权微信用户 %s 的消息', userId);
@@ -379,6 +418,7 @@ export class WechatChannel {
                 command.name === 'clear' ||
                 command.name === 'retry') {
                 this.mediaHold.clear(userId);
+                this.state.update(data => { data.heldMedia = data.heldMedia.filter(batch => batch.userId !== userId); });
             }
             if (wasFirstInbound && this.config.sendWelcomeOnActivate && command.name === 'help') {
                 await this.handleCommand(userId, command.name, command.args);
@@ -387,6 +427,7 @@ export class WechatChannel {
             if (wasFirstInbound &&
                 this.config.sendWelcomeOnActivate &&
                 this.state.get().activeSessionId === '' &&
+                command.name !== 'doctor' &&
                 command.name !== 'new' &&
                 command.name !== 'bind') {
                 await this.ensureSessionForFirstMessage(userId, { welcomeOnly: true });
@@ -401,6 +442,8 @@ export class WechatChannel {
             const deliveryText = [caption, held.mediaText].filter((part) => part.trim() !== '').join('\n\n');
             this.logger.info('已将配文与暂存媒体合并投递（%d 个文件）', held.attachments.length);
             await this.deliverText(userId, deliveryText, 'followup', held.sourceMessageId, {
+                heldBatchId: held.batchId,
+                sessionId: held.sessionId,
                 isFirstInbound: held.wasFirstInbound,
                 attachments: held.attachments,
             });
@@ -419,8 +462,7 @@ export class WechatChannel {
                 const reason = describeError(error);
                 this.logger.error('入站媒体处理失败：%s', reason);
                 await this.sendReply(userId, `收到媒体，但保存失败：${reason}`).catch(() => { });
-                if (text === '')
-                    return;
+                throw error;
             }
         }
         // Media-only: hold briefly so the user can send a caption as the next WeChat message.
@@ -429,6 +471,7 @@ export class WechatChannel {
             this.config.inboundMediaHoldMs > 0) {
             const sourceMessageId = String(message.messageId ?? message.clientId ?? randomUUID());
             this.mediaHold.hold({
+                sessionId: this.state.get().activeSessionId,
                 userId,
                 attachments,
                 mediaText,
@@ -448,11 +491,27 @@ export class WechatChannel {
         }
         await this.deliverText(userId, deliveryText || '（用户发送了媒体文件）', 'followup', String(message.messageId ?? message.clientId ?? randomUUID()), { isFirstInbound: wasFirstInbound, attachments });
     }
+    quarantineMedia(batch) {
+        this.state.update(data => {
+            data.heldMedia = data.heldMedia.filter(entry => batch.batchId
+                ? entry.batchId !== batch.batchId
+                : entry.userId !== batch.userId || entry.sourceMessageId !== batch.sourceMessageId);
+            data.quarantinedMedia.push({ batch, quarantinedAt: this.clock.now() });
+        });
+        this.logger.warn('已隔离不再授权用户的暂存媒体任务');
+    }
     async flushHeldMedia(batch, caption) {
+        if (!this.isAllowedUser(batch.userId)) {
+            this.quarantineMedia(batch);
+            await this.state.flush();
+            return;
+        }
         const deliveryText = [caption, batch.mediaText].filter((part) => part.trim() !== '').join('\n\n');
         this.logger.info('媒体配文等待超时，按默认说明投递（%d 个文件）', batch.attachments.length);
         try {
             await this.deliverText(batch.userId, deliveryText, 'followup', batch.sourceMessageId, {
+                heldBatchId: batch.batchId,
+                sessionId: batch.sessionId,
                 isFirstInbound: batch.wasFirstInbound,
                 attachments: batch.attachments,
             });
@@ -464,9 +523,6 @@ export class WechatChannel {
     }
     async ingestInboundMedia(message) {
         if (typeof this.transport.downloadInboundMedia !== 'function')
-            return [];
-        const downloaded = await this.transport.downloadInboundMedia(message);
-        if (downloaded.length === 0)
             return [];
         // Ensure a session exists so we have a cwd to write into.
         let sessionId = this.state.get().activeSessionId;
@@ -481,8 +537,18 @@ export class WechatChannel {
         }
         const cwd = (await this.bridge.sessionCwd(sessionId)) || this.config.newSessionCwd || process.cwd();
         const destDir = join(cwd, this.config.inboundMediaDir);
-        const saved = await saveInboundMediaFiles(downloaded, destDir, { maxBytes: this.config.maxFileBytes });
-        return attachSavedMediaToDsh(this.ctx, saved, this.logger);
+        const downloaded = await this.transport.downloadInboundMedia(message, this.config.maxFileBytes);
+        if (downloaded.length === 0)
+            return [];
+        try {
+            const saved = await saveInboundMediaFiles(downloaded, destDir, { maxBytes: this.config.maxFileBytes });
+            return await attachSavedMediaToDsh(this.ctx, saved, this.logger);
+        }
+        finally {
+            for (const item of downloaded)
+                if (item.cleanupDir)
+                    await rm(item.cleanupDir, { recursive: true, force: true });
+        }
     }
     /**
      * Ensure an active session exists for first-run UX. Returns whether a session
@@ -516,7 +582,9 @@ export class WechatChannel {
         return { sessionId, autoCreated, welcomed };
     }
     async deliverText(userId, text, mode, sourceMessageId, options = {}) {
-        let activeSessionId = this.state.get().activeSessionId;
+        if (!this.isAllowedUser(userId))
+            throw new Error('用户已不再授权，拒绝投递');
+        let activeSessionId = options.sessionId ?? this.state.get().activeSessionId;
         let skippedStartAck = false;
         if (activeSessionId === '') {
             if (mode !== 'followup') {
@@ -544,9 +612,21 @@ export class WechatChannel {
             }));
             skippedStartAck = true;
         }
+        this.state.update(data => {
+            if (options.heldBatchId) {
+                data.heldMedia = data.heldMedia.filter(batch => batch.userId !== userId || batch.batchId !== options.heldBatchId);
+            }
+            data.retryDeliveries[`${userId}:${sourceMessageId}`] = {
+                sessionId: activeSessionId, text, mode, sourceMessageId,
+                attachments: [...(options.attachments ?? [])], isFirstInbound: options.isFirstInbound,
+                createdAt: this.clock.now(),
+            };
+        });
+        await this.state.flush();
         try {
             await this.bridge.deliver(activeSessionId, text, mode, { userId, messageId: sourceMessageId }, options.attachments ?? []);
-            this.lastRetryable.delete(userId);
+            this.state.update(data => { delete data.retryDeliveries[`${userId}:${sourceMessageId}`]; });
+            await this.state.flush();
             this.logger.info('已投递到会话 %s（%s，附件 %d）', activeSessionId, mode, options.attachments?.length ?? 0);
             if (mode === 'followup') {
                 await this.maybeNameWechatSession(activeSessionId, text);
@@ -570,15 +650,18 @@ export class WechatChannel {
             this.noteError(error);
             const reason = describeError(error);
             this.logger.error('投递到会话失败：%s', reason);
-            this.lastRetryable.set(userId, {
-                sessionId: activeSessionId,
-                text,
-                mode,
-                sourceMessageId,
-                attachments: [...(options.attachments ?? [])],
-                isFirstInbound: options.isFirstInbound,
-                createdAt: this.clock.now(),
+            this.state.update(data => {
+                data.retryDeliveries[`${userId}:${sourceMessageId}`] = {
+                    sessionId: activeSessionId,
+                    text,
+                    mode,
+                    sourceMessageId,
+                    attachments: [...(options.attachments ?? [])],
+                    isFirstInbound: options.isFirstInbound,
+                    createdAt: this.clock.now(),
+                };
             });
+            await this.state.flush();
             const wechatError = [
                 `未能把消息交给 DSH：${reason}`,
                 '发送「重试」或 /retry 可再试一次；也可发 /status 看通道状态。',
@@ -595,12 +678,29 @@ export class WechatChannel {
         }
     }
     async retryLastFailure(userId) {
-        const pending = this.lastRetryable.get(userId);
-        if (pending === undefined)
-            return false;
-        this.lastRetryable.delete(userId);
+        const pending = Object.entries(this.state.get().retryDeliveries).filter(([key]) => key.startsWith(`${userId}:`)).at(-1)?.[1];
+        if (pending === undefined) {
+            const index = this.state.get().failedInbound.findIndex(entry => entry.message.from === userId);
+            if (index < 0) {
+                const notice = this.state.get().pendingNotices.find(entry => entry.quarantined || (entry.attempts ?? 0) > 0);
+                if (!notice)
+                    return false;
+                this.state.update(() => { notice.quarantined = false; notice.attempts = 0; notice.nextAttemptAt = 0; });
+                await this.state.flush();
+                await this.deliverPendingNotice(userId, notice).catch(error => this.noteError(error));
+                return true;
+            }
+            this.state.update(data => {
+                const [entry] = data.failedInbound.splice(index, 1);
+                data.inboundQueue.push(entry.message);
+            });
+            await this.state.flush();
+            await this.sendReply(userId, '已将失败消息放回接收队列。');
+            return true;
+        }
         await this.sendReply(userId, '正在重试上一次投递…').catch(() => { });
         await this.deliverText(userId, pending.text, pending.mode, pending.sourceMessageId, {
+            sessionId: pending.sessionId,
             isFirstInbound: pending.isFirstInbound,
             attachments: pending.attachments,
         });
@@ -664,6 +764,7 @@ export class WechatChannel {
             setActiveSession: (sessionId, clearList) => this.setActiveSession(sessionId, clearList),
             noteUntitledSession: (sessionId) => this.pendingWechatTitles.add(sessionId),
             formatStatus: () => this.formatStatus(),
+            diagnose: () => this.diagnose(),
             deliverText: (uid, text, mode, sourceMessageId) => this.deliverText(uid, text, mode, sourceMessageId),
             retryLastFailure: (uid) => this.retryLastFailure(uid),
             noteError: (error) => this.noteError(error),
@@ -746,7 +847,7 @@ export class WechatChannel {
             `最近轮询：${formatTimestamp(this.lastPollAt)}${this.lastPollAt ? `（${formatDuration(this.clock.now() - this.lastPollAt)} 前）` : ''}`,
             `待补发摘要：${data.pendingNotices.length}`,
             `出站队列：${this.queue.size}`,
-            `可重试失败：${owner !== '' && this.lastRetryable.has(owner) ? '有（发「重试」）' : '无'}`,
+            `可重试失败：${owner !== '' && Object.keys(this.state.get().retryDeliveries).some(key => key.startsWith(`${owner}:`)) ? '有（发「重试」）' : '无'}`,
             `计数：入站 ${data.counters.inbound} / 出站 ${data.counters.outbound} / 错误 ${data.counters.errors}`,
         ];
         if (this.loginQr !== undefined && this.credentials === undefined)
@@ -824,32 +925,54 @@ export class WechatChannel {
         return now - last <= maxAge && now - record.updatedAt <= maxAge;
     }
     async sendProactive(userId, text, files, sessionId) {
+        const notice = this.state.addPendingNotice({ sessionId, text, files: [...files].map(file => ({ ...file })) });
+        await this.state.flush();
         if (!this.canProactivelySend(userId)) {
-            this.state.addPendingNotice({ sessionId, text, files: [...files] });
-            this.logger.warn('距上次入站已超过 %d 小时（或没有 context_token），不尝试主动发送；已暂存摘要，等待用户下次发消息补发。', this.config.windowHours);
             await this.notifyDsh(sessionId, `超过 ${this.config.windowHours} 小时互动窗口（或缺少 context_token），任务结果未推送到微信，已暂存待补发。`);
             return;
         }
-        let textSent = false;
         try {
-            if (text.trim() !== '') {
-                await this.sendReply(userId, text);
-                textSent = true;
-            }
-            await this.sendFiles(userId, files, sessionId);
+            await this.deliverPendingNotice(userId, notice);
         }
         catch (error) {
             this.noteError(error);
-            const reason = describeError(error);
-            this.logger.error('主动推送失败，已暂存摘要：%s', reason);
-            // Text that already reached the user is not queued again; only the
-            // undelivered part is retained for the next inbound message.
-            this.state.addPendingNotice({ sessionId, text: textSent ? '' : text, files: [...files] });
-            await this.notifyDsh(sessionId, `任务结果推送到微信失败，已暂存待用户下次发消息补发：${reason}`);
+            await this.notifyDsh(sessionId, `任务结果推送到微信失败，已暂存待用户下次发消息补发：${describeError(error)}`);
         }
     }
+    backgroundTasks = new Set();
+    track(task) {
+        this.backgroundTasks.add(task);
+        void task.catch(error => this.noteError(error)).finally(() => this.backgroundTasks.delete(task));
+    }
+    noticesSending = new Map();
+    deliverPendingNotice(userId, notice) {
+        const current = this.noticesSending.get(notice.id);
+        if (current)
+            return current;
+        const task = this.performNoticeDelivery(userId, notice).catch(async (error) => {
+            this.state.update(() => {
+                notice.attempts = (notice.attempts ?? 0) + 1;
+                notice.quarantined = error instanceof MediaValidationError || notice.attempts >= 3;
+                notice.nextAttemptAt = this.clock.now() + Math.min(30 * 60_000, 30_000 * 2 ** (notice.attempts - 1));
+            });
+            await this.state.flush();
+            throw error;
+        }).finally(() => this.noticesSending.delete(notice.id));
+        this.noticesSending.set(notice.id, task);
+        return task;
+    }
+    async performNoticeDelivery(userId, notice) {
+        if (!this.contextTokenFor(userId))
+            throw new Error('缺少回复凭证');
+        await deliverNotice(this.state, notice, this.config.textChunkChars, text => this.sendReply(userId, text), file => this.sendFiles(userId, [file], notice.sessionId));
+    }
     async flushPendingNotices(userId) {
-        const notices = this.state.takePendingNotices(3);
+        const dropped = this.state.get().droppedNotices;
+        if (dropped > 0 && this.canProactivelySend(userId)) {
+            await this.sendReply(userId, `待补发队列已满，${dropped} 条旧摘要已移除；请在 DSH 查看历史任务。`);
+            this.state.update(data => { data.droppedNotices -= dropped; });
+        }
+        const notices = this.state.takePendingNotices(3, this.clock.now());
         if (notices.length === 0)
             return;
         if (!this.canProactivelySend(userId))
@@ -857,9 +980,11 @@ export class WechatChannel {
         const sent = [];
         for (const notice of notices) {
             try {
-                const header = `补发 ${formatTimestamp(notice.createdAt)} 的任务摘要：`;
-                await this.sendReply(userId, `${header}\n${notice.text}`);
-                await this.sendFiles(userId, notice.files, notice.sessionId);
+                if (!notice.replayHeaderSent && notice.text) {
+                    this.state.update(() => { notice.text = `补发 ${formatTimestamp(notice.createdAt)} 的任务摘要：\n${notice.text}`; notice.replayHeaderSent = true; });
+                    await this.state.flush();
+                }
+                await this.deliverPendingNotice(userId, notice);
                 sent.push(notice.id);
             }
             catch (error) {
@@ -981,8 +1106,8 @@ export class WechatChannel {
         }
         catch (error) {
             if (error instanceof MediaValidationError) {
-                this.logger.warn('跳过无法发送的文件：%s', error.message);
-                return;
+                this.logger.warn('无法发送文件：%s', error.message);
+                throw error;
             }
             throw error;
         }
@@ -1085,6 +1210,41 @@ export class WechatChannel {
             await this.notifyDsh(callingSessionId, `wechat_send 失败：${reason}`);
             throw error;
         }
+    }
+    /** Safe to share: no tokens, QR URLs, user IDs, paths or message content. */
+    async diagnose() {
+        const snapshot = await this.getStatusSnapshot();
+        let storage = '正常';
+        try {
+            await this.state.flush();
+        }
+        catch {
+            storage = '失败：请检查状态目录权限与磁盘空间';
+        }
+        const health = this.describePollHealth();
+        const directory = await this.bridge.sessionCwd(this.state.get().activeSessionId).catch(() => undefined) || this.config.newSessionCwd || process.cwd();
+        const workspace = await inspectWorkspace(directory);
+        return [
+            '微信通道诊断',
+            ...workspace,
+            `宿主接口：${['agents', 'tools', 'sessionQuery', 'credentials'].every(key => this.ctx.get(key)) ? '必需服务已提供' : '部分必需服务缺失'}`,
+            'DSH 兼容基线：0.2.1-rc.2（运行版本请在 DSH 确认）',
+            `失败入站：${this.state.get().failedInbound.length}；待重试投递：${Object.keys(this.state.get().retryDeliveries).length}；等待配文：${this.state.get().heldMedia.length}`,
+            `登录：${this.credentials ? '已有凭据' : '未登录，请调用 wechat_login'}`,
+            `连接：${snapshot.status}`,
+            `轮询：${health.healthy ? '正常' : '异常或尚未开始，请检查网络或重新登录'}`,
+            `回复凭证：${snapshot.hasContextToken ? '已有' : '缺少，请在微信发送一条消息'}`,
+            `会话：${snapshot.activeSessionStatus}`,
+            `状态存储：${storage}`,
+            `待补发：${snapshot.pendingNotices}；隔离补发：${this.state.get().pendingNotices.filter(entry => entry.quarantined).length}；隔离媒体：${this.state.get().quarantinedMedia.length}；发送队列：${snapshot.queueSize}`,
+            `累计错误：${snapshot.counters.errors}；已移除旧摘要：${this.state.get().droppedNotices}`,
+            `下一步：${snapshot.nextAction}`,
+        ].join('\n');
+    }
+    async exportDiagnostics() {
+        const path = join(this.config.stateDir, `diagnostic-${Date.now()}-${randomUUID()}.txt`);
+        await writeFile(path, await this.diagnose(), { mode: 0o600, flag: 'wx' });
+        return path;
     }
     async getStatusSnapshot() {
         const data = this.state.get();

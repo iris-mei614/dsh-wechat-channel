@@ -85,7 +85,7 @@ export class WechatIlinkTransport {
             })),
         };
     }
-    async downloadInboundMedia(message) {
+    async downloadInboundMedia(message, maxBytes) {
         const rawItems = (message.items ?? [])
             .map((item) => item.raw)
             .filter((item) => typeof item === 'object' && item !== null);
@@ -94,7 +94,7 @@ export class WechatIlinkTransport {
         const cdnBaseUrl = this.credentials?.baseUrl
             ? this.options.cdnBaseUrl
             : this.options.cdnBaseUrl;
-        return downloadInboundMediaItems(rawItems, cdnBaseUrl);
+        return downloadInboundMediaItems(rawItems, cdnBaseUrl, maxBytes, true, this.options.stagingRoot);
     }
     async sendText(to, text, contextToken) {
         await sendTextMessage(this.requireApi(), to, text, contextToken);

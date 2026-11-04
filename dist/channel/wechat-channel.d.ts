@@ -35,7 +35,6 @@ export declare class WechatChannel {
     private windowWarnedForInboundAt;
     /** Sessions created from WeChat that still need a first-message title. */
     private readonly pendingWechatTitles;
-    private readonly lastRetryable;
     private readonly progress;
     private readonly loginPage;
     private readonly mediaHold;
@@ -51,7 +50,10 @@ export declare class WechatChannel {
     private safeSleep;
     private isAllowedUser;
     private bindOwner;
+    private inboundTail;
     handleInbound(message: InboundMessage): Promise<void>;
+    private processInbound;
+    private quarantineMedia;
     private flushHeldMedia;
     private ingestInboundMedia;
     /**
@@ -74,6 +76,11 @@ export declare class WechatChannel {
     private onTurnComplete;
     private canProactivelySend;
     private sendProactive;
+    private readonly backgroundTasks;
+    private track;
+    private readonly noticesSending;
+    private deliverPendingNotice;
+    private performNoticeDelivery;
     private flushPendingNotices;
     private contextTokenFor;
     private sendReply;
@@ -96,6 +103,9 @@ export declare class WechatChannel {
         textParts: number;
         files: number;
     }>;
+    /** Safe to share: no tokens, QR URLs, user IDs, paths or message content. */
+    diagnose(): Promise<string>;
+    exportDiagnostics(): Promise<string>;
     getStatusSnapshot(): Promise<ChannelStatusSnapshot>;
     private loginPageSnapshot;
     /**

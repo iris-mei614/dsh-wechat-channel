@@ -9,6 +9,7 @@ export interface CommandRuntimeDeps {
     setActiveSession: (sessionId: string, clearList?: boolean) => void;
     /** Mark a freshly created session so the first followup can name it. */
     noteUntitledSession: (sessionId: string) => void;
+    diagnose: () => Promise<string>;
     formatStatus: () => Promise<string>;
     deliverText: (userId: string, text: string, mode: 'followup' | 'steer' | 'inject', sourceMessageId: string) => Promise<void>;
     retryLastFailure: (userId: string) => Promise<boolean>;

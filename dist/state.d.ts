@@ -1,3 +1,21 @@
+import type { HeldMediaBatch } from './media-hold.js';
+import type { DeliveredAttachment } from './types.js';
+import type { InboundMessage } from './types.js';
+export interface RetryDelivery {
+    sessionId: string;
+    text: string;
+    mode: 'followup' | 'steer' | 'inject';
+    sourceMessageId: string;
+    attachments: DeliveredAttachment[];
+    isFirstInbound?: boolean;
+    createdAt: number;
+}
+export interface FailedInbound {
+    message: InboundMessage;
+    attempts: number;
+    failedAt: number;
+    reason?: string;
+}
 export interface ContextTokenRecord {
     token: string;
     updatedAt: number;
@@ -11,6 +29,10 @@ export interface PendingNotice {
         description?: string;
     }>;
     createdAt: number;
+    replayHeaderSent?: boolean;
+    attempts?: number;
+    nextAttemptAt?: number;
+    quarantined?: boolean;
 }
 export interface ListEntry {
     id: string;
@@ -19,6 +41,15 @@ export interface ListEntry {
 export interface ChannelStateData {
     version: 1;
     syncBuf: string;
+    inboundQueue: InboundMessage[];
+    inboundAttempts: Record<string, number>;
+    failedInbound: FailedInbound[];
+    retryDeliveries: Record<string, RetryDelivery>;
+    heldMedia: HeldMediaBatch[];
+    quarantinedMedia: Array<{
+        batch: HeldMediaBatch;
+        quarantinedAt: number;
+    }>;
     activeSessionId: string;
     ownerUserId: string;
     accountId: string;
@@ -26,6 +57,7 @@ export interface ChannelStateData {
     lastInboundAt: number;
     contextTokens: Record<string, ContextTokenRecord>;
     pendingNotices: PendingNotice[];
+    droppedNotices: number;
     seenMessages: string[];
     listSnapshot: ListEntry[];
     counters: {
@@ -63,7 +95,7 @@ export declare class StateStore {
     markSeen(key: string): boolean;
     addPendingNotice(notice: Omit<PendingNotice, 'id' | 'createdAt'>): PendingNotice;
     removePendingNotices(ids: readonly string[]): void;
-    takePendingNotices(limit: number): PendingNotice[];
+    takePendingNotices(limit: number, now?: number): PendingNotice[];
     private scheduleSave;
     private write;
     /** Last background save failure, if any. State remains in memory. */

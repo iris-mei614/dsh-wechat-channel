@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { describeToolActivity } from '../progress.js';
@@ -33,7 +33,7 @@ export function createWechatUserMessage(text, userId, messageId, attachments = [
     if (content.length === 0)
         content.push({ type: 'text', text: text || '(空消息)' });
     return deepFreeze({
-        id: randomUUID(),
+        id: `wechat-${createHash('sha256').update(JSON.stringify([userId, messageId])).digest('hex')}`,
         role: 'user',
         content,
         source: {
@@ -271,6 +271,16 @@ export class DshAgentBridge {
         }
         const agent = (await this.ensureLive(sessionId));
         const message = createWechatUserMessage(text, source.userId, source.messageId, attachments);
+        const accepted = [
+            ...(agent.session.events ?? []).map(event => event.data?.message),
+            ...(agent.inbox?.nextTurn ?? []), ...(agent.inbox?.nextStep ?? []),
+        ];
+        if (accepted.some((entry) => {
+            const candidate = entry?.message ?? entry;
+            return candidate?.id === message.id || (candidate?.source?.kind === WECHAT_SOURCE
+                && candidate.source.userId === source.userId && candidate.source.messageId === source.messageId);
+        }))
+            return { messageId: String(message.id) };
         if (mode === 'steer')
             agent.steer(message);
         else if (mode === 'inject')

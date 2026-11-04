@@ -1,6 +1,6 @@
 {
   "name": "dsh-wechat-channel",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "把个人微信（iLink/ClawBot）接入 DeepSeek Harness 的双向通道 — Bidirectional WeChat channel for DSH using the official iLink Bot API",
   "keywords": [
     "微信",
@@ -51,7 +51,10 @@
     "CHANGELOG.md",
     "README.md",
     "README.en.md",
-    "LICENSE"
+    "LICENSE",
+    "COMPATIBILITY.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md"
   ],
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json",

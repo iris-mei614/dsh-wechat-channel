@@ -1,7 +1,9 @@
 import type { DeliveredAttachment } from './types.js';
 import type { Clock } from './rate-limit.js';
 export interface HeldMediaBatch {
+    batchId?: string;
     userId: string;
+    sessionId?: string;
     attachments: DeliveredAttachment[];
     mediaText: string;
     wasFirstInbound: boolean;
@@ -11,6 +13,7 @@ export interface HeldMediaBatch {
 export interface MediaHoldOptions {
     holdMs: number;
     clock: Clock;
+    onChange?: (batches: HeldMediaBatch[]) => void;
     onTimeout: (batch: HeldMediaBatch) => void | Promise<void>;
 }
 export declare function isMediaFlushKeyword(text: string): boolean;
@@ -30,6 +33,7 @@ export declare class MediaHoldBuffer {
     }): void;
     /** Take and clear a held batch (e.g. when caption text arrives). */
     take(userId: string): HeldMediaBatch | undefined;
+    private changed;
     clear(userId: string): void;
     clearAll(): void;
     size(): number;

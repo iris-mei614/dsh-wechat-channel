@@ -1,5 +1,6 @@
 import type { IlinkCredentials, IlinkTransport, InboundMessage, LoginQr, PollResponse, QrStatus } from '../types.js';
 interface TransportOptions {
+    stagingRoot?: string;
     baseUrl: string;
     cdnBaseUrl: string;
     log?: (message: string, ...params: unknown[]) => void;
@@ -18,7 +19,7 @@ export declare class WechatIlinkTransport implements IlinkTransport {
     getCredentials(): IlinkCredentials | undefined;
     private requireApi;
     getUpdates(syncBuf: string, timeoutMs: number, signal?: AbortSignal): Promise<PollResponse>;
-    downloadInboundMedia(message: InboundMessage): Promise<import("./inbound-media.js").DownloadedInboundMedia[]>;
+    downloadInboundMedia(message: InboundMessage, maxBytes?: number): Promise<import("./inbound-media.js").DownloadedInboundMedia[]>;
     sendText(to: string, text: string, contextToken: string): Promise<void>;
     sendMedia(to: string, filePath: string, caption: string | undefined, contextToken: string): Promise<void>;
     requestQrCode(botType: string): Promise<LoginQr>;

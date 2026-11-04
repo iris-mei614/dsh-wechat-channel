@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0
+
+- Add `/doctor`, the Chinese `诊断` shortcut, and `wechat_doctor` with private, sanitized report export.
+- Persist inbound batches, failed DSH deliveries and media caption holds across restarts. Retry failed deliveries in their original session.
+- Isolate inbound messages after three failed attempts. Recheck authorization before restoring and executing held media; quarantine revoked users' tasks.
+- Checkpoint outgoing text chunks and attachments separately. Back off transient notification failures and quarantine permanently invalid files so later results can proceed; support manual retry.
+- Serialize background state writes and explicit flushes; use unique temporary filenames and clean up failed writes.
+- Prevent attachment overwrites, stage downloads and AES decryption on disk, enforce byte/item/time limits, and report partial batch failures.
+- Preserve unrelated held media during steering and acknowledge only the consumed media batch.
+- Reduce replay duplicates using stable message IDs and host history/inbox checks. Remote acceptance and local persistence are not atomic; exactly-once delivery is not guaranteed.
+- Add recovery and review regression tests, a Node.js 22/24 CI matrix, compatibility guidance, contribution/security docs and issue templates.
+- Use official npm registry URLs in the lockfile to avoid remote-download restrictions.
+
 ## 0.2.1
 
 - **Release pipeline.** Tag `v*` on `main` triggers GitHub Actions → npm Trusted

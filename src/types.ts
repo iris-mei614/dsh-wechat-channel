@@ -199,8 +199,8 @@ export interface IlinkTransport {
   sendText(to: string, text: string, contextToken: string): Promise<void>;
   sendMedia(to: string, filePath: string, caption: string | undefined, contextToken: string): Promise<void>;
   /** Download media bytes for inbound items that carry CDN encrypt params. */
-  downloadInboundMedia?(message: InboundMessage): Promise<
-    Array<{ kind: 'image' | 'voice' | 'file' | 'video'; data: Uint8Array; fileName?: string }>
+  downloadInboundMedia?(message: InboundMessage, maxBytes?: number): Promise<
+    Array<{ kind: 'image' | 'voice' | 'file' | 'video'; data?: Uint8Array; tempPath?: string; cleanupDir?: string; bytes?: number; fileName?: string }>
   >;
   requestQrCode(botType: string): Promise<LoginQr>;
   pollQrStatus(qrcode: string): Promise<QrStatus>;
